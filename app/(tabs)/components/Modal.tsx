@@ -1,6 +1,13 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, Animated } from 'react-native';
-import { Text, Button, Portal, Modal, Surface, useTheme, Dialog } from 'react-native-paper';
+import React, { useState } from "react";
+import { View, StyleSheet, Animated } from "react-native";
+import {
+  Text,
+  Button,
+  Portal,
+  Modal,
+  useTheme,
+  Dialog,
+} from "react-native-paper";
 
 interface TripModalProps {
   visible: boolean;
@@ -15,10 +22,15 @@ interface TripModalProps {
   endLocation: { latitude: number; longitude: number } | null;
   handleSubmit: () => void;
   modalAnimation: Animated.Value;
-  setStartLocation: (location: { latitude: number; longitude: number } | null) => void;
-  setEndLocation: (location: { latitude: number; longitude: number } | null) => void;
+  setStartLocation: (
+    location: { latitude: number; longitude: number } | null
+  ) => void;
+  setEndLocation: (
+    location: { latitude: number; longitude: number } | null
+  ) => void;
   setRouteCoords: (coords: { latitude: number; longitude: number }[]) => void;
   setPlaceLocations: (locations: any[]) => void;
+  handleClear: () => void;
 }
 
 export default function TripModal({
@@ -37,22 +49,13 @@ export default function TripModal({
   setStartLocation,
   setEndLocation,
   setRouteCoords,
-  setPlaceLocations
+  setPlaceLocations,
+  handleClear,
 }: TripModalProps) {
   const theme = useTheme();
   const [selectedPlaces, setSelectedPlaces] = useState<any[]>([]);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [currentPlace, setCurrentPlace] = useState<any>(null);
-
-  const handleClear = () => {
-    setStartLocation(null);
-    setEndLocation(null);
-    setRouteCoords([]);
-    setStartTime('');
-    setEndTime('');
-    setPlaceLocations([]);
-    setSelectedPlaces([]);
-  };
 
   const handleSubmitAndClose = () => {
     handleSubmit();
@@ -64,6 +67,9 @@ export default function TripModal({
     setShowConfirmDialog(true);
   };
 
+  // KONTROL ET: Bu fonksiyon farkli yerde de tanimli.
+  // bunun yerine helper fonksiyonlar olusturup tek bir fonksiyonu
+  // farkli yerlerde kullanabilirsin.
   const confirmPlaceSelection = () => {
     if (currentPlace) {
       setSelectedPlaces([...selectedPlaces, currentPlace]);
@@ -77,7 +83,7 @@ export default function TripModal({
     modalContent: {
       margin: 20,
       borderRadius: theme.roundness * 2,
-      overflow: 'hidden',
+      overflow: "hidden",
     },
     modalInnerContainer: {
       backgroundColor: theme.colors.surface,
@@ -86,9 +92,9 @@ export default function TripModal({
     },
     modalTitle: {
       fontSize: 24,
-      fontWeight: 'bold',
+      fontWeight: "bold",
       marginBottom: 20,
-      textAlign: 'center',
+      textAlign: "center",
       color: theme.colors.onSurface,
     },
     locationButton: {
@@ -96,8 +102,8 @@ export default function TripModal({
       borderColor: theme.colors.outline,
     },
     buttonContainer: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
+      flexDirection: "row",
+      justifyContent: "space-between",
       marginTop: 20,
     },
     button: {
@@ -136,11 +142,11 @@ export default function TripModal({
                 {
                   translateY: modalAnimation.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [300, 0]
-                  })
-                }
-              ]
-            }
+                    outputRange: [300, 0],
+                  }),
+                },
+              ],
+            },
           ]}
         >
           <Text style={styles.modalTitle}>Yeni Gezi</Text>
@@ -152,7 +158,9 @@ export default function TripModal({
             icon={startLocation ? "check-circle" : "map-marker"}
             textColor={theme.colors.primary}
           >
-            {startLocation ? 'Başlangıç Konumu Seçildi' : 'Başlangıç Konumu Seç'}
+            {startLocation
+              ? "Başlangıç Konumu Seçildi"
+              : "Başlangıç Konumu Seç"}
           </Button>
 
           <Button
@@ -162,7 +170,7 @@ export default function TripModal({
             icon={endLocation ? "check-circle" : "map-marker"}
             textColor={theme.colors.primary}
           >
-            {endLocation ? 'Bitiş Konumu Seçildi' : 'Bitiş Konumu Seç'}
+            {endLocation ? "Bitiş Konumu Seçildi" : "Bitiş Konumu Seç"}
           </Button>
 
           {selectedPlaces.length > 0 && (
@@ -200,7 +208,10 @@ export default function TripModal({
         </Animated.View>
       </Modal>
 
-      <Dialog visible={showConfirmDialog} onDismiss={() => setShowConfirmDialog(false)}>
+      <Dialog
+        visible={showConfirmDialog}
+        onDismiss={() => setShowConfirmDialog(false)}
+      >
         <Dialog.Title>Yer Ekle</Dialog.Title>
         <Dialog.Content>
           <Text>Bu yeri gezi listesine eklemek istiyor musunuz?</Text>

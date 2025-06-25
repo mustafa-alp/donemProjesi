@@ -1,42 +1,91 @@
-import { StyleSheet, View, Alert, Animated } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
-import { useState, useRef, useEffect } from 'react';
+import {
+  StyleSheet,
+  View,
+  Animated,
+  Modal,
+  Alert,
+  ScrollView,
+} from "react-native";
+import MapView, { Marker, Polyline } from "react-native-maps";
+import { useState, useRef, useEffect } from "react";
+import { collection, getDocs } from "firebase/firestore";
+import { firebaseDatabase } from "@/firebaseConfig";
 import { MapStyle } from "./MapStyle";
-import { Button, Portal, Provider, Text, Surface, useTheme, Dialog } from 'react-native-paper';
-import TripModal from './components/Modal';
+import {
+  Button,
+  Portal,
+  Provider,
+  Text,
+  Surface,
+  useTheme,
+  Dialog,
+  TextInput,
+} from "react-native-paper";
+import TripModal from "./components/Modal";
+import {
+  calculateShortestRoute,
+  fetchNearbyPlaces,
+  handleSubmit,
+  startSelectingLocations,
+  confirmPlaceSelection,
+  getMarkerColor,
+  getMarkerIcon,
+  addItemsToFirebase,
+  showSelectedLocation,
+  deleteLocation,
+  fetchData,
+} from "@/helpers";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 
-const GOOGLE_PLACES_API_KEY = mapkey;
+const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 
 interface HomeScreenProps {
   selectedPlaces: string[];
 }
 
-export default function HomeScreen({ selectedPlaces }: HomeScreenProps) {
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
-  const [startLocation, setStartLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [endLocation, setEndLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [routeCoords, setRouteCoords] = useState<{ latitude: number; longitude: number }[]>([]);
-  const [placeLocations, setPlaceLocations] = useState<Array<{
+export default function HomeScreen({
+  selectedPlaces,
+  setSelectedPlaces,
+  listModalVisible,
+  setListModalVisible,
+}: HomeScreenProps) {
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [startLocation, setStartLocation] = useState<{
     latitude: number;
     longitude: number;
-    name: string;
-    type: string;
-  }>>([]);
+  } | null>(null);
+  const [endLocation, setEndLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [routeCoords, setRouteCoords] = useState<
+    { latitude: number; longitude: number }[]
+  >([]);
+  const [placeLocations, setPlaceLocations] = useState<
+    Array<{
+      latitude: number;
+      longitude: number;
+      name: string;
+      type: string;
+    }>
+  >([]);
   const [selectingLocation, setSelectingLocation] = useState(false);
   const [selectingStart, setSelectingStart] = useState(false);
   const [selectingEnd, setSelectingEnd] = useState(false);
   const [modelTxt, setModelTxt] = useState(false);
-  const [loadingPlaces, setLoadingPlaces] = useState(false);
+  // KONTROL ET: loadingPlaces hiçbir yerde kullanilmamis.
   const mapRef = useRef<MapView>(null);
   const modalAnimation = useRef(new Animated.Value(0)).current;
   const theme = useTheme();
-  const [selectedPlaceLocations, setSelectedPlaceLocations] = useState<Array<{
-    latitude: number;
-    longitude: number;
-    name: string;
-    type: string;
-  }>>([]);
+  const [selectedPlaceLocations, setSelectedPlaceLocations] = useState<
+    Array<{
+      latitude: number;
+      longitude: number;
+      name: string;
+      type: string;
+    }>
+  >([]);
   const [showPlaceDialog, setShowPlaceDialog] = useState(false);
   const [currentPlace, setCurrentPlace] = useState<{
     latitude: number;
@@ -44,123 +93,56 @@ export default function HomeScreen({ selectedPlaces }: HomeScreenProps) {
     name: string;
     type: string;
   } | null>(null);
+  const [hasToggleApplyButton, setHasToggleApplyButton] = useState(false);
+  const [loadingPlaces, setLoadingPlaces] = useState(false);
+  const [saveModalVisible, setSaveModalVisible] = useState(false);
+  const [routeName, setRouteName] = useState("");
+  const [data, setData] = useState([]);
 
-  const placeTypes = [
-    { id: 'restaurant', name: 'Restoran' },
-    { id: 'cafe', name: 'Kafe' },
-    { id: 'museum', name: 'Müze' },
-    { id: 'park', name: 'Park' },
-    { id: 'shopping_mall', name: 'AVM' },
-    { id: 'tourist_attraction', name: 'Turistik Yer' },
-  ];
-
-  const fetchNearbyPlaces = async () => {
-    if (selectedPlaces.length === 0) {
-      setPlaceLocations([]);
-      return;
-    }
-
-    setLoadingPlaces(true);
-    try {
-      const allPlaces = [];
-      
-      for (const type of selectedPlaces) {
-        const response = await fetch(
-          `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=37.874641,32.493156&radius=5000&type=${type}&key=${GOOGLE_PLACES_API_KEY}&language=tr`
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const querySnapshot = await getDocs(
+          collection(firebaseDatabase, "locations")
         );
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.status === 'OK' && data.results) {
-          const places = data.results.map((place: any) => ({
-            name: place.name,
-            type: place.types[0],
-            latitude: place.geometry.location.lat,
-            longitude: place.geometry.location.lng
-          }));
-          allPlaces.push(...places);
-        }
+        const allLocationData = [];
+
+        querySnapshot.forEach((doc) => {
+          allLocationData.push({ id: doc.id, ...doc.data() });
+        });
+        setData(allLocationData);
+      } catch (error) {
+        console.log(error);
+        Alert.alert("Bir hata meydana geldi.");
       }
-      
-      setPlaceLocations(allPlaces);
-    } catch (error) {
-      Alert.alert(
-        "Hata",
-        "Yerler yüklenirken bir hata oluştu. Lütfen internet bağlantınızı ve API anahtarınızı kontrol edin."
-      );
-    } finally {
-      setLoadingPlaces(false);
-    }
-  };
+    };
+
+    fetchData();
+  }, [listModalVisible]);
 
   useEffect(() => {
     if (selectedPlaces.length > 0) {
-      fetchNearbyPlaces();
+      fetchNearbyPlaces(
+        selectedPlaces,
+        (newPlaces) => {
+          // Sadece henüz seçilmemiş yerleri ekle
+          const filteredNewPlaces = newPlaces.filter(
+            (newPlace) =>
+              !selectedPlaceLocations.some(
+                (selectedPlace) =>
+                  selectedPlace.name.toLowerCase().trim() === newPlace.name.toLowerCase().trim()
+              )
+          );
+          setPlaceLocations(filteredNewPlaces);
+        },
+        setLoadingPlaces,
+        GOOGLE_PLACES_API_KEY
+      );
     } else {
       setPlaceLocations([]);
     }
   }, [selectedPlaces]);
 
-  const fetchRoute = async (start: { latitude: number, longitude: number }, end: { latitude: number, longitude: number }) => {
-    try {
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/directions/json?origin=${start.latitude},${start.longitude}&destination=${end.latitude},${end.longitude}&key=${GOOGLE_PLACES_API_KEY}&mode=walking&language=tr`
-      );
-      const data = await response.json();
-      if (data.routes && data.routes.length > 0) {
-        const points = decodePolyline(data.routes[0].overview_polyline.points);
-        setRouteCoords(points);
-      } else {
-        setRouteCoords([]);
-      }
-    } catch (error) {
-      setRouteCoords([]);
-    }
-  };
-
-  function decodePolyline(encoded: string) {
-    let points = [];
-    let index = 0, len = encoded.length;
-    let lat = 0, lng = 0;
-    while (index < len) {
-      let b, shift = 0, result = 0;
-      do {
-        b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-      lat += dlat;
-      shift = 0;
-      result = 0;
-      do {
-        b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-      lng += dlng;
-      points.push({
-        latitude: lat / 1e5,
-        longitude: lng / 1e5
-      });
-    }
-    return points;
-  }
-
-  useEffect(() => {
-    if (startLocation && endLocation) {
-      fetchRoute(startLocation, endLocation);
-    } else {
-      setRouteCoords([]);
-    }
-  }, [startLocation, endLocation]);
-
-  // Seçili yerler değiştiğinde marker'ları güncelle
   useEffect(() => {
     if (mapRef.current) {
       mapRef.current.forceUpdate();
@@ -184,75 +166,8 @@ export default function HomeScreen({ selectedPlaces }: HomeScreenProps) {
     setModelTxt(true);
   };
 
-  const startSelectingStartLocation = () => {
-    setSelectingLocation(true);
-    setSelectingStart(true);
-    setSelectingEnd(false);
-    setModelTxt(false);
-  };
-
-  const startSelectingEndLocation = () => {
-    setSelectingLocation(true);
-    setSelectingEnd(true);
-    setSelectingStart(false);
-    setModelTxt(false);
-  };
-
   const openModel = () => {
     setModelTxt(true);
-  };
-
-  const handleSubmit = async () => {
-    if (!startLocation || !endLocation) {
-      Alert.alert('Hata', 'Başlangıç veya bitiş konumu seçilmemiş.');
-      return;
-    }
-
-    try {
-      // Rota oluştur
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/directions/json?origin=${startLocation.latitude},${startLocation.longitude}&destination=${endLocation.latitude},${endLocation.longitude}&key=${GOOGLE_PLACES_API_KEY}&mode=walking&language=tr`
-      );
-      const data = await response.json();
-
-      if (data.routes && data.routes[0]) {
-        const points = data.routes[0].overview_polyline.points;
-        const coords = decodePolyline(points);
-        setRouteCoords(coords);
-      }
-
-      // Seçili yerleri getir
-      if (selectedPlaces.length > 0) {
-        const allPlaces = [];
-        for (const type of selectedPlaces) {
-          const response = await fetch(
-            `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${startLocation.latitude},${startLocation.longitude}&radius=5000&type=${type}&key=${GOOGLE_PLACES_API_KEY}&language=tr`
-          );
-          
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          
-          const data = await response.json();
-          
-          if (data.status === 'OK' && data.results) {
-            const places = data.results.map((place: any) => ({
-              name: place.name,
-              type: place.types[0],
-              latitude: place.geometry.location.lat,
-              longitude: place.geometry.location.lng
-            }));
-            allPlaces.push(...places);
-          }
-        }
-        setPlaceLocations(allPlaces);
-      }
-
-      setModelTxt(false);
-    } catch (error) {
-      console.error('Error:', error);
-      Alert.alert('Hata', 'İşlem sırasında bir hata oluştu.');
-    }
   };
 
   useEffect(() => {
@@ -269,42 +184,6 @@ export default function HomeScreen({ selectedPlaces }: HomeScreenProps) {
     }
   }, [modelTxt]);
 
-  const getMarkerColor = (place: {
-    latitude: number;
-    longitude: number;
-    name: string;
-    type: string;
-  }) => {
-    // Eğer yer seçili yerler listesinde varsa siyah renk döndür
-    const isSelected = selectedPlaceLocations.some(
-      selectedPlace => 
-        selectedPlace.latitude === place.latitude && 
-        selectedPlace.longitude === place.longitude
-    );
-    
-    if (isSelected) {
-      return '#000000'; // Siyah renk
-    }
-
-    // Seçili değilse normal renk döndür
-    switch (place.type) {
-      case 'restaurant':
-        return '#FF5252'; // Kırmızı
-      case 'cafe':
-        return '#FF9800'; // Turuncu
-      case 'museum':
-        return '#2196F3'; // Mavi
-      case 'park':
-        return '#4CAF50'; // Yeşil
-      case 'shopping_mall':
-        return '#FFC107'; // Sarı
-      case 'tourist_attraction':
-        return '#00BCD4'; // Turkuaz
-      default:
-        return '#9E9E9E'; // Gri
-    }
-  };
-
   const handleMarkerPress = (place: {
     latitude: number;
     longitude: number;
@@ -315,64 +194,62 @@ export default function HomeScreen({ selectedPlaces }: HomeScreenProps) {
     setShowPlaceDialog(true);
   };
 
-  const confirmPlaceSelection = () => {
-    if (currentPlace) {
-      const updatedPlaces = [...selectedPlaceLocations, currentPlace];
+  const removePlaceFromList = (
+    place: { latitude: number; longitude: number; name: string; type: string } | null,
+    selectedPlaceLocations: Array<{ latitude: number; longitude: number; name: string; type: string }>,
+    setSelectedPlaceLocations: (places: Array<{ latitude: number; longitude: number; name: string; type: string }>) => void,
+    setShowPlaceDialog: (show: boolean) => void,
+    setCurrentPlace: (place: { latitude: number; longitude: number; name: string; type: string } | null) => void
+  ) => {
+    if (place) {
+      if (selectedPlaceLocations.length <= 2) {
+        Alert.alert(
+          "Uyarı",
+          "Listede en az 2 yer olmalıdır. Yer çıkarılamaz.",
+          [{ text: "Tamam", onPress: () => setShowPlaceDialog(false) }]
+        );
+        return;
+      }
+
+      const updatedPlaces = selectedPlaceLocations.filter(
+        (p) => p.name.toLowerCase().trim() !== place.name.toLowerCase().trim()
+      );
       setSelectedPlaceLocations(updatedPlaces);
-      console.log('Seçilen yerler:', updatedPlaces);
+      
+      // Rota güncelleme
+      if (startLocation && endLocation) {
+        calculateShortestRoute(
+          updatedPlaces,
+          startLocation,
+          endLocation,
+          setRouteCoords,
+          setHasToggleApplyButton
+        );
+      }
     }
     setShowPlaceDialog(false);
     setCurrentPlace(null);
   };
 
-  const calculateShortestRoute = () => {
-    if (selectedPlaceLocations.length < 2) {
-      Alert.alert('Hata', 'En az iki yer seçmelisiniz.');
-      return;
-    }
+  const isPlaceInList = (
+    place: { latitude: number; longitude: number; name: string; type: string } | null,
+    selectedPlaceLocations: Array<{ latitude: number; longitude: number; name: string; type: string }>
+  ) => {
+    if (!place) return false;
+    return selectedPlaceLocations.some(
+      (p) => p.name.toLowerCase().trim() === place.name.toLowerCase().trim()
+    );
+  };
 
-    const start = startLocation;
-    const end = endLocation;
-    const places = selectedPlaceLocations;
-
-    // En kısa mesafeyi bulmak için bir algoritma uygulayın
-    let shortestDistance = Infinity;
-    let bestRoute: Array<{ latitude: number; longitude: number; name: string; type: string; }> = [];
-
-    const permute = (arr, l, r) => {
-      if (l === r) {
-        // Rota hesapla
-        let totalDistance = euclideanDistance(start, arr[0]) + euclideanDistance(arr[arr.length - 1], end);
-        for (let i = 0; i < arr.length - 1; i++) {
-          totalDistance += euclideanDistance(arr[i], arr[i + 1]);
-        }
-
-        if (totalDistance < shortestDistance) {
-          shortestDistance = totalDistance;
-          bestRoute = arr;
-        }
-      } else {
-        for (let i = l; i <= r; i++) {
-          [arr[l], arr[i]] = [arr[i], arr[l]]; // Swap
-          permute(arr, l + 1, r);
-          [arr[l], arr[i]] = [arr[i], arr[l]]; // Backtrack
-        }
-      }
-    };
-
-    permute(places, 0, places.length - 1);
-
-    // En kısa rotayı çizin
-    if (start && end) {
-      const routeCoords = [start, ...bestRoute, end];
-      setRouteCoords(routeCoords);
-    } else {
-      Alert.alert('Hata', 'Başlangıç veya bitiş konumu seçilmemiş.');
-    }
-
-    console.log('Başlangıç konumu:', startLocation);
-    console.log('Bitiş konumu:', endLocation);
-    console.log('En kısa rota:', bestRoute);
+  const handleClear = () => {
+    setStartLocation(null);
+    setEndLocation(null);
+    setRouteCoords([]);
+    setSelectedPlaceLocations([]);
+    setPlaceLocations([]);
+    setSelectedPlaces([]);
+    setHasToggleApplyButton(false);
+    setModelTxt(false);
   };
 
   const styles = StyleSheet.create({
@@ -383,31 +260,31 @@ export default function HomeScreen({ selectedPlaces }: HomeScreenProps) {
       flex: 1,
     },
     plusButton: {
-      position: 'absolute',
+      position: "absolute",
       bottom: 120,
       right: 20,
       borderRadius: 25,
       elevation: 4,
     },
     modalContent: {
-      backgroundColor: 'white',
+      backgroundColor: "white",
       borderTopLeftRadius: 20,
       borderTopRightRadius: 20,
       padding: 20,
-      maxHeight: '80%',
+      maxHeight: "80%",
     },
     modalTitle: {
       fontSize: 24,
-      fontWeight: 'bold',
+      fontWeight: "bold",
       marginBottom: 20,
-      textAlign: 'center',
+      textAlign: "center",
     },
     input: {
       marginBottom: 15,
     },
     sectionTitle: {
       fontSize: 16,
-      fontWeight: 'bold',
+      fontWeight: "bold",
       marginBottom: 10,
     },
     chipsContainer: {
@@ -420,26 +297,26 @@ export default function HomeScreen({ selectedPlaces }: HomeScreenProps) {
     },
     chip: {
       marginHorizontal: 4,
-      backgroundColor: '#F5F5F5',
+      backgroundColor: "#F5F5F5",
       borderWidth: 1,
-      borderColor: '#E0E0E0',
+      borderColor: "#E0E0E0",
     },
     selectedChip: {
       backgroundColor: theme.colors.primary,
       borderColor: theme.colors.primary,
     },
     chipText: {
-      color: '#333',
+      color: "#333",
     },
     selectedChipText: {
-      color: '#FFF',
+      color: "#FFF",
     },
     locationButton: {
       marginBottom: 15,
     },
     buttonContainer: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
+      flexDirection: "row",
+      justifyContent: "space-between",
       marginTop: 20,
     },
     button: {
@@ -447,41 +324,76 @@ export default function HomeScreen({ selectedPlaces }: HomeScreenProps) {
       marginHorizontal: 5,
     },
     clearButton: {
-      borderColor: '#d32f2f',
+      borderColor: "#d32f2f",
     },
     submitButton: {
-      backgroundColor: '#2196f3',
+      backgroundColor: "#2196f3",
     },
     locationSelectionOverlay: {
-      position: 'absolute',
+      position: "absolute",
       top: 0,
       left: 0,
       right: 0,
       padding: 20,
-      alignItems: 'center',
+      alignItems: "center",
       elevation: 4,
     },
     locationSelectionText: {
       fontSize: 16,
       marginBottom: 10,
-      textAlign: 'center',
+      textAlign: "center",
     },
     cancelSelectionButton: {
       marginTop: 10,
     },
     selectionOverlay: {
-      position: 'absolute',
+      position: "absolute",
       top: 0,
       left: 0,
       right: 0,
       padding: 20,
-      alignItems: 'center',
+      alignItems: "center",
       elevation: 4,
     },
     selectionText: {
       fontSize: 16,
       marginBottom: 10,
-      textAlign: 'center',
+      textAlign: "center",
+    },
+    applyButton: {
+      borderRadius: 25,
+    },
+    listModalContainer: {
+      backgroundColor: "white",
+      padding: 32,
+      borderRadius: 24,
+      alignItems: "center",
+      justifyContent: "flex-start",
+      elevation: 8,
+      minHeight: 320,
+    },
+    listModalContent: {
+      alignItems: "center",
+    },
+    routeRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      backgroundColor: "#f5f5f5",
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      marginBottom: 2,
+      width: "100%",
+    },
+    routeText: {
+      fontSize: 16,
+      flex: 1,
+      color: "#333",
+    },
+    useButton: {
+      marginLeft: 12,
+      borderRadius: 8,
     },
   });
 
@@ -504,14 +416,14 @@ export default function HomeScreen({ selectedPlaces }: HomeScreenProps) {
             <Marker
               coordinate={startLocation}
               title="Başlangıç Konumu"
-              pinColor="green"
+              pinColor="orange"
             />
           )}
           {endLocation && (
             <Marker
               coordinate={endLocation}
               title="Bitiş Konumu"
-              pinColor="red"
+              pinColor="blue"
             />
           )}
           {routeCoords.length > 0 && (
@@ -521,34 +433,106 @@ export default function HomeScreen({ selectedPlaces }: HomeScreenProps) {
               strokeWidth={5}
             />
           )}
-          {placeLocations.map((place, index) => (
-            <Marker
-              key={index}
-              coordinate={{
-                latitude: place.latitude,
-                longitude: place.longitude
-              }}
-              title={place.name}
-              description={place.type}
-              pinColor={getMarkerColor(place)}
-              onPress={() => handleMarkerPress(place)}
-            />
-          ))}
+          {(hasToggleApplyButton ? selectedPlaceLocations : [...selectedPlaceLocations, ...placeLocations]).map(
+            (place, index) => (
+              <Marker
+                key={index}
+                coordinate={{
+                  latitude: place.latitude,
+                  longitude: place.longitude,
+                }}
+                title={place.name}
+                description={place.type}
+                pinColor={getMarkerColor(place, selectedPlaceLocations)}
+                onPress={() => handleMarkerPress(place)}
+              >
+                <MaterialCommunityIcons
+                  name={getMarkerIcon(place.type)}
+                  size={24}
+                  color="#fff"
+                  style={{
+                    backgroundColor: getMarkerColor(
+                      place,
+                      selectedPlaceLocations
+                    ),
+                    borderRadius: 12,
+                    padding: 2,
+                  }}
+                />
+              </Marker>
+            )
+          )}
         </MapView>
 
-        <Button
-          mode="contained"
-          style={styles.plusButton}
-          onPress={openModel}
-          icon="plus"
+        <View
+          style={{
+            flexDirection: "row",
+            position: "absolute",
+            bottom: 120,
+            left: 0,
+            width: "100%",
+            paddingHorizontal: 10,
+            justifyContent: "space-between",
+          }}
         >
-          Yeni Gezi
-        </Button>
+          <Button
+            mode="contained"
+            style={[
+              styles.applyButton,
+              {
+                flex: 1,
+                marginHorizontal: 5,
+                position: "relative",
+                left: 0,
+                width: undefined,
+                minWidth: 0,
+              },
+            ]}
+            onPress={() => {
+              calculateShortestRoute(
+                selectedPlaceLocations,
+                startLocation,
+                endLocation,
+                setRouteCoords,
+                setHasToggleApplyButton
+              );
+            }}
+          >
+            {hasToggleApplyButton ? "Göster" : "Uygula"}
+          </Button>
+          <Button
+            mode="contained"
+            style={{
+              flex: 1,
+              borderRadius: 25,
+              marginHorizontal: 5,
+              minWidth: 0,
+            }}
+            icon="content-save"
+            onPress={() => setSaveModalVisible(true)}
+          >
+            Kaydet
+          </Button>
+          <Button
+            mode="contained"
+            style={{
+              flex: 1,
+              borderRadius: 25,
+              marginHorizontal: 5,
+              minWidth: 0,
+            }}
+            icon="plus"
+            onPress={openModel}
+          >
+            Yeni Gezi
+          </Button>
+        </View>
 
         {selectingLocation && (
           <Surface style={styles.locationSelectionOverlay}>
             <Text style={styles.locationSelectionText}>
-              {selectingStart ? 'Başlangıç' : 'Bitiş'} konumunu seçmek için haritaya dokunun
+              {selectingStart ? "Başlangıç" : "Bitiş"} konumunu seçmek için
+              haritaya dokunun
             </Text>
             <Button
               mode="contained"
@@ -568,41 +552,283 @@ export default function HomeScreen({ selectedPlaces }: HomeScreenProps) {
             setStartTime={setStartTime}
             endTime={endTime}
             setEndTime={setEndTime}
-            startSelectingStartLocation={startSelectingStartLocation}
-            startSelectingEndLocation={startSelectingEndLocation}
+            startSelectingStartLocation={() =>
+              startSelectingLocations(
+                setSelectingLocation,
+                true,
+                setSelectingStart,
+                true,
+                setSelectingEnd,
+                false,
+                setModelTxt,
+                false
+              )
+            }
+            startSelectingEndLocation={() =>
+              startSelectingLocations(
+                setSelectingLocation,
+                true,
+                setSelectingStart,
+                false,
+                setSelectingEnd,
+                true,
+                setModelTxt,
+                false
+              )
+            }
             startLocation={startLocation}
             endLocation={endLocation}
-            handleSubmit={handleSubmit}
+            handleSubmit={() =>
+              handleSubmit(
+                startLocation,
+                endLocation,
+                GOOGLE_PLACES_API_KEY,
+                setRouteCoords,
+                selectedPlaces,
+                setPlaceLocations,
+                setModelTxt
+              )
+            }
             modalAnimation={modalAnimation}
             setStartLocation={setStartLocation}
             setEndLocation={setEndLocation}
             setRouteCoords={setRouteCoords}
             setPlaceLocations={setPlaceLocations}
+            handleClear={handleClear}
           />
         </Portal>
 
         <Portal>
-          <Dialog visible={showPlaceDialog} onDismiss={() => setShowPlaceDialog(false)}>
-            <Dialog.Title>Yer Ekle</Dialog.Title>
+          <Dialog
+            visible={showPlaceDialog}
+            onDismiss={() => setShowPlaceDialog(false)}
+          >
+            <Dialog.Title>
+              {isPlaceInList(currentPlace, selectedPlaceLocations) ? "Yer Çıkar" : "Yer Ekle"}
+            </Dialog.Title>
             <Dialog.Content>
-              <Text>{currentPlace?.name} yerini gezi listesine eklemek istiyor musunuz?</Text>
+              <Text>
+                {currentPlace?.name} yerini {isPlaceInList(currentPlace, selectedPlaceLocations) ? "gezi listesinden çıkarmak" : "gezi listesine eklemek"} istiyor musunuz?
+              </Text>
             </Dialog.Content>
             <Dialog.Actions>
               <Button onPress={() => setShowPlaceDialog(false)}>İptal</Button>
-              <Button onPress={confirmPlaceSelection}>Ekle</Button>
+              {isPlaceInList(currentPlace, selectedPlaceLocations) ? (
+                <Button
+                  onPress={() =>
+                    removePlaceFromList(
+                      currentPlace,
+                      selectedPlaceLocations,
+                      setSelectedPlaceLocations,
+                      setShowPlaceDialog,
+                      setCurrentPlace
+                    )
+                  }
+                  textColor={theme.colors.error}
+                >
+                  Çıkar
+                </Button>
+              ) : (
+                <Button
+                  onPress={() =>
+                    confirmPlaceSelection(
+                      currentPlace,
+                      selectedPlaceLocations,
+                      setSelectedPlaceLocations,
+                      setShowPlaceDialog,
+                      setCurrentPlace
+                    )
+                  }
+                >
+                  Ekle
+                </Button>
+              )}
+            </Dialog.Actions>
+          </Dialog>
+        </Portal>
+
+        <Modal
+          visible={listModalVisible}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setListModalVisible(false)}
+        >
+          <View
+            style={{
+              flex: 1,
+              justifyContent: "center",
+              alignItems: "center",
+              backgroundColor: "rgba(0,0,0,0.3)",
+            }}
+          >
+            <View
+              style={[
+                styles.listModalContainer,
+                { width: "90%", maxWidth: 420, minHeight: 320 },
+              ]}
+            >
+              <Text style={styles.modalTitle}>Kayıtlı Rotalar</Text>
+              <ScrollView
+                style={{
+                  flex: 1,
+                  width: "100%",
+                }}
+              >
+                {data.map((item) => (
+                  <View style={styles.routeRow} key={item.id}>
+                    <Text style={styles.routeText}>{item.name}</Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Button
+                        mode="contained"
+                        style={[styles.useButton, { minWidth: 30, width: 30, height: 30, justifyContent: 'center', alignItems: 'center' }]}
+                        onPress={() =>
+                          showSelectedLocation(
+                            item.startLocation,
+                            setStartLocation,
+                            item.endLocation,
+                            setEndLocation,
+                            GOOGLE_PLACES_API_KEY,
+                            setRouteCoords,
+                            setModelTxt,
+                            item.selectedPlaceLocations,
+                            setSelectedPlaceLocations,
+                            setHasToggleApplyButton,
+                            setListModalVisible
+                          )
+                        }
+                        icon={({ size, color }) => (
+                          <MaterialCommunityIcons
+                            name="check"
+                            size={size}
+                            color={color}
+                            style={{ marginRight: -15 }}
+                          />
+                        )}
+                        buttonColor="green"
+                      >
+                      </Button>
+                      <Button
+                        mode="contained"
+                        style={[styles.useButton, { minWidth: 30, width: 30, height: 30, justifyContent: 'center', alignItems: 'center' }]}
+                        onPress={() => {
+                          Alert.alert(
+                            "Rota Sil",
+                            "Bu rotayı silmek istediğinizden emin misiniz?",
+                            [
+                              {
+                                text: "İptal",
+                                style: "cancel"
+                              },
+                              {
+                                text: "Sil",
+                                style: "destructive",
+                                onPress: async () => {
+                                  try {
+                                    await deleteLocation(item.id);
+                                    await fetchData(setData);
+                                  } catch (error) {
+                                    console.log(error);
+                                    Alert.alert("Hata", "Rota silinirken bir hata oluştu.");
+                                  }
+                                }
+                              }
+                            ]
+                          );
+                        }}
+                        icon={({ size, color }) => (
+                          <MaterialCommunityIcons
+                            name="delete"
+                            size={size}
+                            color={color}
+                            style={{ marginRight: -15 }}
+                          />
+                        )}
+                        buttonColor="red"
+                      >
+                      </Button>
+                    </View>
+                  </View>
+                ))}
+
+                <View style={{ marginBottom: 12 }} />
+              </ScrollView>
+
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignSelf: "center",
+                  marginTop: 10,
+                }}
+              >
+                <Button
+                  mode="outlined"
+                  onPress={handleClear}
+                  style={[styles.button, styles.clearButton]}
+                  textColor={theme.colors.error}
+                  icon="delete"
+                >
+                  Temizle
+                </Button>
+                <Button
+                  mode="contained"
+                  icon="check"
+                  style={{ flex: 1, marginHorizontal: 5 }}
+                  onPress={() => setListModalVisible(false)}
+                  contentStyle={{ paddingVertical: 2 }}
+                  textColor="white"
+                  labelStyle={{ fontSize: 13 }}
+                >
+                  Tamam
+                </Button>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Kaydet Modalı */}
+        <Portal>
+          <Dialog
+            visible={saveModalVisible}
+            onDismiss={() => setSaveModalVisible(false)}
+          >
+            <Dialog.Title>Rota Kaydet</Dialog.Title>
+            <Dialog.Content>
+              <TextInput
+                label="Rota İsmi"
+                value={routeName}
+                onChangeText={setRouteName}
+                mode="outlined"
+                style={{ marginBottom: 16 }}
+              />
+            </Dialog.Content>
+            <Dialog.Actions>
+              <Button
+                onPress={() => setSaveModalVisible(false)}
+                textColor={theme.colors.error}
+              >
+                İptal
+              </Button>
+
+              <Button
+                mode="contained"
+                onPress={() =>
+                  addItemsToFirebase(
+                    routeName,
+                    endLocation,
+                    startLocation,
+                    selectedPlaceLocations,
+                    setSaveModalVisible,
+                    setRouteName
+                  )
+                }
+                disabled={!routeName.trim()}
+              >
+                Kaydet
+              </Button>
             </Dialog.Actions>
           </Dialog>
         </Portal>
       </View>
     </Provider>
   );
-}
-
-function euclideanDistance(start: { latitude: number; longitude: number; } | null, end: { latitude: number; longitude: number; } | null): number {
-  if (!start || !end) {
-    return Infinity; // Return a large number if either point is null
-  }
-  const dx = start.latitude - end.latitude;
-  const dy = start.longitude - end.longitude;
-  return Math.sqrt(dx * dx + dy * dy);
 }
